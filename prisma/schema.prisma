@@ -1,0 +1,172 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Énumération pour les rôles utilisateurs
+enum UserRole {
+  ADMIN
+  CLIENT
+}
+
+// Modèle Catégorie
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  products  Product[]
+
+  @@map("categories")
+}
+
+// Énumération pour le statut des commandes
+enum OrderStatus {
+  PENDING      // En attente
+  CONFIRMED    // Confirmée
+  PREPARING    // En préparation
+  DELIVERED    // Livrée
+  CANCELLED    // Annulée
+}
+
+// Énumération pour les cycles de livraison
+enum DeliveryCycle {
+  CYCLE_1  // Commande samedi -> Livraison mercredi
+  CYCLE_2  // Commande mercredi -> Livraison samedi
+}
+
+// Modèle Utilisateur
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String    // Hash bcrypt
+  firstName     String
+  lastName      String
+  phone         String?
+  address       String?
+  role          UserRole  @default(CLIENT)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  orders        Order[]
+  
+  @@map("users")
+}
+
+// Modèle Boutique
+model Shop {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  description   String?
+  imageUrl      String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  products      Product[]
+  
+  @@map("shops")
+}
+
+// Modèle Produit
+model Product {
+  id            String          @id @default(cuid())
+  name          String
+  description   String?
+  price         Float           // Prix de base en euros
+  priceUnit     String?         @default("unitaire") // ex: "unitaire", "au kg"
+  imageUrl      String?
+  isAvailable   Boolean         @default(true)
+  stock         Int?            // Stock disponible (optionnel)
+  shopId        String?         // Rattaché à une boutique
+  categoryId    String?         // Rattaché à une catégorie
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Relations
+  shop          Shop?           @relation(fields: [shopId], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  orderItems    OrderItem[]
+  options       ProductOption[] // Nouvelles options de produit
+  
+  @@map("products")
+}
+
+// Modèle Option de Produit (ex: "Style", "Taille")
+model ProductOption {
+  id          String   @id @default(cuid())
+  productId   String
+  name        String   // ex: "Couleur", "Poids"
+  isRequired  Boolean  @default(false)
+  
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  values      ProductOptionValue[]
+
+  @@map("product_options")
+}
+
+// Modèle Valeur d'Option (ex: "Pastel", "500g")
+model ProductOptionValue {
+  id              String   @id @default(cuid())
+  optionId        String
+  name            String   // ex: "Vert", "Bleu"
+  priceModifier   Float    @default(0) // Modification du prix (ex: +2.0 pour plus grand)
+  priceMultiplier Float    @default(1)  // Multiplication (ex: x0.5)
+  
+  option          ProductOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@map("product_option_values")
+}
+
+// Modèle Commande
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique // Numéro de commande généré automatiquement
+  userId          String
+  status          OrderStatus   @default(PENDING)
+  deliveryCycle   DeliveryCycle
+  orderDate       DateTime      @default(now()) // Date de la commande
+  deliveryDate    DateTime      // Date de livraison calculée
+  totalAmount     Float         // Montant total de la commande
+  notes           String?       // Notes ou commentaires
+  isPickedUp      Boolean       @default(false) // Marquage pour la distribution
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Relations
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderItems      OrderItem[]
+  
+  @@index([userId])
+  @@index([deliveryDate])
+  @@index([status])
+  @@map("orders")
+}
+
+// Modèle Détail de Commande
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  productId   String
+  quantity    Int
+  unitPrice   Float    // Prix unitaire au moment de la commande
+  subtotal    Float    // quantity * unitPrice
+  notes       String?  // Options choisies (ex: "Couleur: Pastel")
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
